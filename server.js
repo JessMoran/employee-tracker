@@ -1,9 +1,8 @@
-var mysql = require("mysql");
+const mysql = require("mysql");
 const inquirer = require("inquirer");
 const cTable = require('console.table');
-const util = require("util");
 
-var connection = mysql.createConnection({
+const connection = mysql.createConnection({
   host: "localhost",
 
   // Your port; if not 3306
@@ -35,7 +34,7 @@ function promptUserOpts() {
       "Remove department",
       "View all employees",
       "Add employee",
-      "Update employee",
+      "Update employee's manager",
       "Remove employee",
       "View all roles",
       "Add role",
@@ -43,58 +42,61 @@ function promptUserOpts() {
       "Remove role",
       "Quit"
     ]
-  })
-    .then(function (answer) {
-      switch (answer.opts[0]) {
-        case "View all departments":
-          viewCol("departments");
-          break;
+  }).then(function (answer) {
+    switch (answer.opts[0]) {
+      case "View departments":
+        viewCol("departments");
+        break;
 
-        case "Add department":
-          addNewDepartment("departments");
-          break;
+      case "Add department":
+        addNewDepartment("departments");
+        break;
 
-        case "Update department":
-          updateField();
-          break;
+      case "Update department":
+        updateDepartment("departments");
+        break;
 
-        case "Remove department":
-          removeField("departments");
-          break;
+      case "Remove department":
+        removeDepartment("departments");
+        break;
 
-        case "View all employees":
-          viewCol("employees");
-          break;
+      case "View all employees":
+        viewCol("employees");
+        break;
 
-        case "Add employee":
-          addNewEmployee("employees");
-          break;
+      case "Add employee":
+        addNewEmployee("employees");
+        break;
 
-        case "Remove employee":
-          removeField("employees");
-          break;
+      case "Remove employee":
+        removeEmployee("employees");
+        break;
 
-        case "View all roles":
-          viewCol("roles");
-          break;
+      case "Update employee's manager":
+        updateEmployee("employees");
+        break;
 
-        case "Add role":
-          addNewField()
-          break;
+      case "View all roles":
+        viewCol("roles");
+        break;
 
-        case "Update role":
-          updateField();
-          break;
+      case "Add role":
+        addNewRole("roles")
+        break;
 
-        case "Remove role":
-          removeField("roles");
-          break;
+      case "Update role":
+        updateRole("roles");
+        break;
 
-        case "Quit":
-          connection.end();
-          break;
-      }
-    });
+      case "Remove role":
+        removeRole(["id", "first_name"], "roles");
+        break;
+
+      case "Quit":
+        connection.end();
+        break;
+    }
+  });
 }
 
 function viewCol(col) {
@@ -117,33 +119,20 @@ function addNewDepartment(col) {
   })
 }
 
-function addNewEmployee(col) {
-  connection.query("SELECT title FROM roles", function (err, res) {
-    return inquirer.prompt([
-      {
-        type: "checkbox",
-        message: "What is the employee's role?",
-        name: "roles",
-        choices: res.map(role => role.title),
-      },
-    ]).then(function (answer) {
-      insertNewEl(col, answer);
-    })
+function addNewRole(col) {
+  return inquirer.prompt([
+    {
+      type: "input",
+      message: "Type the new role",
+      name: "title"
+    }
+  ]).then(function (answer) {
+    insertNewEl(col, answer);
   })
-  connection.query("SELECT * FROM employees", function (err, res) {
-    console.log(res);
-    return inquirer.prompt([
-      {
-        type: "checkbox",
-        message: "What is the employee's role?",
-        name: "roles",
-        choices: res.map(role => role.title),
-      },
-    ]).then(function (answer) {
-      insertNewEl(col, answer);
-    })
-  })
+}
 
+function addNewEmployee(col) {
+  let answers = [];
   return inquirer.prompt([
     {
       type: "input",
@@ -156,65 +145,209 @@ function addNewEmployee(col) {
       name: "last_name"
     },
   ]).then(function (answer) {
-    insertNewEl(col, answer);
+    answers.push(answer)
+    connection.query("SELECT roles.id, roles.title FROM roles", function (err, res) {
+      return inquirer.prompt([
+        {
+          type: "checkbox",
+          message: "What is the employee's role?",
+          name: "role",
+          choices: res.map(role => role.title),
+        },
+      ]).then(function (answer2) {
+        res.forEach(role => {
+          if (role.title === answer2.role[0]) {
+            answers.push(role.id);
+          }
+        })
+        connection.query("SELECT employee2.id,employee2.first_name FROM employees as employee1 JOIN employees as employee2 on employee1.manager_id = employee2.id", function (err, res) {
+          return inquirer.prompt([
+            {
+              type: "checkbox",
+              message: "Who is the employee's manager?",
+              name: "manager",
+              choices: res.map(employee => employee.first_name),
+            },
+          ]).then(function (answer3) {
+            res.forEach(employee => {
+              if (employee.first_name === answer3.manager[0]) {
+                answers.push(employee.id);
+              }
+            })
+            console.log(col, answers)
+            insertNewEl(col, answers);
+          })
+        })
+      })
+    })
   })
 }
 
-function insertNewEl(col, answer) {
-  connection.query("INSERT INTO ?? SET ?", [col, answer], function (err) {
+function insertNewEl(col, answers) {
+  connection.query("INSERT INTO ?? SET ?", [col, answers], function (err) {
     if (err) throw err;
     connection.end();
   });
 }
 
-function updateField(col) {
-  connection.query("SELECT * FROM ??", [col], function (err, res) {
-    if (err) throw err;
-
-    inquirer.prompt({
-      type: "checkbox",
-      message: "What would you like to do?",
-      name: "opts",
-      choices: res.forEach(department => department.name)
-    }).then(function (answer) {
-      connection.query("UPDATE ?? SET ? WHERE ?", [table, field, col], function (err, res) {
-        if (err) throw err;
-        connection.end();
-      });
-    })
-    connection.end();
-  });
-}
-
-function removeField(col) {
-  return inquirer.prompt([
-    {
-      type: "checkbox",
-      message: "What role do ?",
-      name: "roles",
-      choices: (function () {
-        connection.query("SELECT * FROM roles", function (err, res) {
-          if (err) throw err;
-          const result = res.filter(role => role.title);
-          console.log(result);
-          return result;
-        })
+function removeEmployee(col) {
+  connection.query("SELECT ?? FROM ?? ", [["id", "first_name"], col], function (err, res) {
+    return inquirer.prompt([
+      {
+        type: "checkbox",
+        message: "Which employee do you want to delete?",
+        name: "name",
+        choices: res.map(element => element.first_name),
+      },
+    ]).then(function (answer) {
+      res.filter(employee => {
+        if (employee.first_name === answer.name[0]) {
+          console.log(employee.id);
+        }
       })
-    },
-    {
-      type: "checkbox",
-      message: "Who is the employee's manager?",
-      name: "opts",
-      choices: function () {
-        connection.query("SELECT * FROM employees", function (err, res) {
-          if (err) throw err;
-          for (const employee in res) {
-            console.log(`${employee}: ${res[employee.first_name]}`);
-          }
-        })
-      }
-    }
-  ]).then(function (answer) {
-    insertNewEl(col, answer);
+      removeEl(col, id)
+    })
+  })
+}
+
+function removeRole(col) {
+  connection.query("SELECT ?? FROM ?? ", [["id", "title"], col], function (err, res) {
+    return inquirer.prompt([
+      {
+        type: "checkbox",
+        message: "Which role do you want to delete?",
+        name: "role",
+        choices: res.map(element => element.title),
+      },
+    ]).then(function (answer) {
+      res.filter(role => {
+        if (role.title === answer.role[0]) {
+          console.log(role.id);
+        }
+      })
+      removeEl(col, id);
+    })
+  })
+}
+
+function removeDepartment(col) {
+  connection.query("SELECT ?? FROM ?? ", [["id", "name"], col], function (err, res) {
+    return inquirer.prompt([
+      {
+        type: "checkbox",
+        message: "Which department do you want to delete?",
+        name: "department",
+        choices: res.map(element => element.name),
+      },
+    ]).then(function (answer) {
+      res.filter(department => {
+        if (department.name === answer.department[0]) {
+          console.log(department.id);
+        }
+      })
+      removeEl(col, id);
+    })
+  })
+}
+
+function removeEl(col, id) {
+  connection.query("DELETE FROM ?? WHERE ?", [col, id], function (err) {
+    if (err) throw err;
+    connection.end();
+  })
+}
+
+function updateRole(col) {
+  connection.query("SELECT ?? FROM ?? ", [["id", "title"], col], function (err, res) {
+    return inquirer.prompt([
+      {
+        type: "checkbox",
+        message: "What role would you like to update?",
+        name: "role",
+        choices: res.map(element => element.title),
+      },
+    ]).then(function (answer) {
+      res.filter(role => {
+        if (role.title === answer.role[0]) {
+          console.log(role.id);
+        }
+      })
+      return inquirer.prompt([
+        {
+          type: "input",
+          message: "Type the new role",
+          name: "title",
+        },
+      ]).then(function (answer) {
+        updateEl(col, answer, id);
+      })
+    })
+  })
+}
+
+function updateDepartment(col) {
+  connection.query("SELECT ?? FROM ?? ", [["id", "name"], col], function (err, res) {
+    return inquirer.prompt([
+      {
+        type: "checkbox",
+        message: "What department would you like to update?",
+        name: "department",
+        choices: res.map(element => element.name),
+      },
+    ]).then(function (answer) {
+      let answer3 = [];
+      res.filter(department => {
+        if (department.title === answer.department[0]) {
+          answer3.push(department.id);
+        }
+      })
+      answer3.push(answers);
+      return inquirer.prompt([
+        {
+          type: "input",
+          message: "Type the new department",
+          name: "title",
+        },
+      ]).then(function (answer) {
+        updateEl(col, answer, id);
+      })
+    })
+  })
+}
+
+function updateEmployee(col) {
+  connection.query("SELECT ?? FROM ?? ", ["first_name", col], function (err, res) {
+    return inquirer.prompt([
+      {
+        type: "checkbox",
+        message: "Which employee's manager do you want to update?",
+        name: "manager",
+        choices: res.map(element => element.first_name),
+      },
+    ]).then(function (answer) {
+      let answer3 = [];
+      res.filter(department => {
+        if (department.title === answer.manager[0]) {
+          answer3.push(department.id);
+        }
+      })
+      answer3.push(answers);
+      return inquirer.prompt([
+        {
+          type: "input",
+          message: "Type the new manager",
+          name: "manager_id",
+        },
+      ]).then(function (answer) {
+        updateEl(col, answer, id);
+      })
+    })
+  })
+}
+
+function updateEl(col, id) {
+  connection.query("UPDATE ?? SET ? WHERE ?", [col, answer, id], function (err) {
+    if (err) throw err;
+    connection.end();
   })
 }
